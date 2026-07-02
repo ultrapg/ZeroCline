@@ -36,7 +36,7 @@ ZeroCline is a portable, self-contained Rust executable designed for Windows to 
 When running ZeroCline, it establishes and maintains the following clean structure within its directory:
 
 ```text
-E:\zerocline\
+zerocline\
 ├── README.md               # Detailed project documentation
 ├── Cargo.toml              # Rust project description
 ├── zerocline_config.json   # Suite configuration
