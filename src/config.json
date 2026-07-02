@@ -1,0 +1,11 @@
+[
+  {
+    "name": "nvidia-nemotron-3-nano-4b",
+    "filename": "NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
+    "download_url": "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF/resolve/main/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
+    "ctx_size": 10000,
+    "n_gpu_layers": 0,
+    "temperature": 0.4,
+    "thinking": true
+  }
+]

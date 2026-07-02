@@ -1,0 +1,7 @@
+{
+  "default_model": "nvidia-nemotron-3-nano-4b",
+  "llama_port": 8080,
+  "llama_host": "127.0.0.1",
+  "backend": "vulkan",
+  "hide_second_terminal": true
+}
