@@ -358,6 +358,8 @@ pub fn start_llama_server(
 }
 
 pub fn run_cline_agent(workspace_dir: &Path) -> Result<Child> {
+    use std::io::IsTerminal;
+
     let home_dir = workspace_dir.join("home");
     let node_dir = workspace_dir.join("node");
     let project_dir = workspace_dir.join("project");
@@ -373,24 +375,68 @@ pub fn run_cline_agent(workspace_dir: &Path) -> Result<Child> {
 
     println!("Launching Cline coding agent...");
     let script_path = workspace_dir.join(bin_names::cline_script_name());
-    let mut cmd = bin_names::cline_command(&script_path);
-
-    cmd.env("HOME", &abs_home_dir)
-        .env("PATH", &new_path)
-        .env("CLINE_DATA_DIR", &abs_cline_dir)
-        .env("CLINE_PROVIDER_SETTINGS_PATH", &abs_cline_dir.join("settings").join("providers.json"))
-        .env("CLINE_GLOBAL_SETTINGS_PATH", &abs_cline_dir.join("settings").join("global-settings.json"))
-        .current_dir(&project_dir);
 
     #[cfg(windows)]
     {
-        cmd.env("USERPROFILE", &abs_home_dir);
+        let mut cmd = bin_names::cline_command(&script_path);
+        cmd.env("HOME", &abs_home_dir)
+            .env("PATH", &new_path)
+            .env("CLINE_DATA_DIR", &abs_cline_dir)
+            .env("CLINE_PROVIDER_SETTINGS_PATH", &abs_cline_dir.join("settings").join("providers.json"))
+            .env("CLINE_GLOBAL_SETTINGS_PATH", &abs_cline_dir.join("settings").join("global-settings.json"))
+            .env("USERPROFILE", &abs_home_dir)
+            .current_dir(&project_dir);
+        let child = cmd.spawn().context("Failed to launch Cline agent")?;
+        return Ok(child);
     }
 
-    let child = cmd.spawn()
-        .context("Failed to launch Cline agent")?;
+    #[cfg(not(windows))]
+    {
+        if std::io::stdin().is_terminal() {
+            let mut cmd = bin_names::cline_command(&script_path);
+            cmd.env("HOME", &abs_home_dir)
+                .env("PATH", &new_path)
+                .env("CLINE_DATA_DIR", &abs_cline_dir)
+                .env("CLINE_PROVIDER_SETTINGS_PATH", &abs_cline_dir.join("settings").join("providers.json"))
+                .env("CLINE_GLOBAL_SETTINGS_PATH", &abs_cline_dir.join("settings").join("global-settings.json"))
+                .current_dir(&project_dir);
+            let child = cmd.spawn().context("Failed to launch Cline agent")?;
+            return Ok(child);
+        }
 
-    Ok(child)
+        // No TTY — spawn Cline in a terminal emulator window
+        let terminals: &[(&str, &[&str])] = &[
+            ("x-terminal-emulator", &["-e"]),
+            ("gnome-terminal", &["--wait", "--"]),
+            ("konsole", &["-e"]),
+            ("xterm", &["-e"]),
+            ("urxvt", &["-e"]),
+            ("rxvt", &["-e"]),
+            ("alacritty", &["-e"]),
+            ("kitty", &["-e"]),
+            ("terminator", &["-e"]),
+            ("xfce4-terminal", &["-e"]),
+            ("lxterminal", &["-e"]),
+        ];
+
+        for (term, args) in terminals {
+            if let Ok(child) = std::process::Command::new(term)
+                .args(*args)
+                .arg(&script_path)
+                .env("HOME", &abs_home_dir)
+                .env("PATH", &new_path)
+                .env("CLINE_DATA_DIR", &abs_cline_dir)
+                .env("CLINE_PROVIDER_SETTINGS_PATH", &abs_cline_dir.join("settings").join("providers.json"))
+                .env("CLINE_GLOBAL_SETTINGS_PATH", &abs_cline_dir.join("settings").join("global-settings.json"))
+                .current_dir(&project_dir)
+                .spawn()
+            {
+                return Ok(child);
+            }
+        }
+
+        Err(anyhow::anyhow!("No terminal emulator found and stdin is not a terminal. Cannot launch Cline interactively."))
+    }
 }
 
 // ─── Process manager (cross-platform cleanup) ────────────────────

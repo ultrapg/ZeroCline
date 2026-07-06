@@ -10,7 +10,7 @@ use anyhow::{Result, Context};
 fn ensure_terminal() -> Result<()> {
     use std::io::IsTerminal;
 
-    if std::io::stdout().is_terminal() || std::io::stderr().is_terminal() {
+    if std::io::stdin().is_terminal() {
         return Ok(());
     }
 
