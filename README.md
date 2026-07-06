@@ -1,6 +1,6 @@
 # ZeroCline: Portable Cline Coding Agent Suite
 
-ZeroCline is a portable, self-contained Rust executable designed for Windows to download, configure, and orchestrate the lifecycle of the **Cline coding agent CLI** alongside a **llama.cpp** backend server, keeping everything strictly isolated in a single directory.
+ZeroCline is a portable, self-contained Rust executable that downloads, configures, and orchestrates the lifecycle of the **Cline coding agent CLI** alongside a **llama.cpp** backend server, keeping everything strictly isolated in a single directory. Supports **Windows** and **Linux**.
 
 ---
 
@@ -9,60 +9,89 @@ ZeroCline is a portable, self-contained Rust executable designed for Windows to 
 1. **Strict Portability & Isolation**
    - Zero dependencies on system-wide software.
    - Automatically downloads and installs a portable Node.js runtime and llama.cpp backend inside the folder.
-   - Redirects the Cline configurations (`providers.json`) locally within the workspace directory using explicit environment variables (`CLINE_DATA_DIR`, `CLINE_PROVIDER_SETTINGS_PATH`, `CLINE_GLOBAL_SETTINGS_PATH`), keeping your host system completely clean.
+   - Redirects Cline configurations (`providers.json`) locally within the workspace directory using explicit environment variables (`CLINE_DATA_DIR`, `CLINE_PROVIDER_SETTINGS_PATH`, `CLINE_GLOBAL_SETTINGS_PATH`), keeping your host system completely clean.
 
-2. **Advanced Process Lifecycle Management (Windows Job Objects)**
-   - Utilizes standard Windows FFI bindings for **Job Objects**.
-   - Spawns child processes (`llama-server.exe` and the `node.exe` Cline CLI) inside a shared Job Object configured with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`.
-   - **Graceful Termination**: Closing the main console window, force-killing `zerocline.exe`, or any sudden crash immediately guarantees that the background model server and the agent CLI processes are terminated cleanly by the Windows kernel.
+2. **Process Lifecycle Management**
+   - **Windows**: Uses Job Objects (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) via FFI — closing the console or crashing guarantees child processes (`llama-server.exe`, `node.exe`) are terminated by the kernel.
+   - **Linux**: Child processes are tracked by PID and cleaned up on exit via a signal handler.
 
-3. **Robust Health Check Initialization**
+3. **Automatic Terminal on Double-Click (Linux)**
+   - When launched from a file manager (no terminal attached), ZeroCline spawns its own terminal emulator (`x-terminal-emulator`, `xterm`, `gnome-terminal`, etc.) so you see logs and the Cline TUI without manual setup.
+
+4. **Robust Health Check Initialization**
    - Automatically polls the local `llama-server` `/health` endpoint on startup.
-   - Blocks launching the Cline TUI until the local GGUF model is fully parsed and loaded in memory (handling model initialization latency and preventing immediate "Error: Loading model" failures).
+   - Blocks launching the Cline TUI until the local GGUF model is fully parsed and loaded in memory.
 
-4. **Multi-Backend Support (Vulkan & CPU)**
+5. **Multi-Backend Support (Vulkan & CPU)**
    - Fully supports Vulkan hardware acceleration and standard CPU fallbacks for `llama.cpp` inference.
 
-5. **Safe Default GPU Allocation**
-   - Uses CPU layers allocation (`n_gpu_layers: 0`) as the default configuration out-of-the-box. This ensures reliable startups without Vulkan VRAM-allocation abort failures on diverse system memory sizes. Users can easily customize layers to utilize more VRAM.
+6. **Safe Default GPU Allocation**
+   - Uses CPU layers allocation (`n_gpu_layers: 0`) as the default configuration out-of-the-box.
 
-6. **Configurable Console Hiding**
-   - Hides the secondary `llama-server.exe` terminal automatically for a clean workspace, while providing an optional setting to display logs in a second window.
+7. **Configurable Console Hiding (Windows)**
+   - Hides the secondary `llama-server.exe` terminal automatically. Provides an optional setting to show logs in a second window (`hide_second_terminal`).
 
 ---
 
 ## Directory Structure
 
-When running ZeroCline, it establishes and maintains the following clean structure within its directory:
+When running ZeroCline, it establishes and maintains the following structure within its directory:
 
+### Windows
 ```text
 zerocline\
-├── README.md               # Detailed project documentation
-├── Cargo.toml              # Rust project description
-├── zerocline_config.json   # Suite configuration
-├── zerocline.exe           # Orchestrator binary
+├── README.md
+├── Cargo.toml
+├── zerocline_config.json
+├── zerocline.exe
 ├── llama\
-│   └── vulkan\
-│       └── (vulkan binaries)
+│   ├── vulkan\
+│   │   └── (vulkan binaries)
+│   └── cpu\
+│       └── (cpu binaries)
 ├── gguf\
 │   └── <model-name>\
 │       ├── <model-name>.gguf
-│       └── config.json     # Model config (defaults to CPU loading)
-└── workspace\              # Home of the Cline Agent
-    ├── node\               # Isolated Node.js runtime
-    ├── node_modules\       # Installed agent modules
+│       └── config.json
+└── workspace\
+    ├── node\
+    ├── node_modules\
     ├── home\
-    │   └── .cline\         # Localized portable Cline data folder
+    │   └── .cline\
     │       └── settings\
-    │           └── providers.json # Registered provider details
-    └── run_cline.bat       # Execution wrapper
+    │           └── providers.json
+    └── run_cline.bat
+```
+
+### Linux
+```text
+zerocline/
+├── README.md
+├── Cargo.toml
+├── zerocline_config.json
+├── zerocline              # Executable
+├── llama/
+│   ├── vulkan/
+│   │   └── (vulkan binaries)
+│   └── cpu/
+│       └── (cpu binaries)
+├── gguf/
+│   └── <model-name>/
+│       ├── <model-name>.gguf
+│       └── config.json
+└── workspace/
+    ├── node/
+    ├── node_modules/
+    ├── home/
+    │   └── .cline/
+    │       └── settings/
+    │           └── providers.json
+    └── run_cline.sh
 ```
 
 ---
 
 ## Configuration (`zerocline_config.json`)
-
-The global configuration file `zerocline_config.json` allows configuring the backend, target model, and runner options:
 
 ```json
 {
@@ -75,17 +104,15 @@ The global configuration file `zerocline_config.json` allows configuring the bac
 ```
 
 ### Config Options
-* `default_model`: Folder name under `gguf/` containing the model GGUF and config.
-* `llama_port`: The network port the `llama-server` listens on (default: `8080`).
-* `llama_host`: The address host the backend binds to (default: `127.0.0.1`).
-* `backend`: Inference backend to download and use (`vulkan` or `cpu`).
-* `hide_second_terminal`: Set to `true` (default) to run the `llama-server` invisibly in the background. Set to `false` to open a second command prompt displaying real-time generation and token inference logs.
+- `default_model`: Folder name under `gguf/` containing the model GGUF and config.
+- `llama_port`: The network port the `llama-server` listens on (default: `8080`).
+- `llama_host`: The address host the backend binds to (default: `127.0.0.1`).
+- `backend`: Inference backend to download and use (`vulkan` or `cpu`).
+- `hide_second_terminal`: (Windows only) Set to `true` (default) to run `llama-server` invisibly. Set to `false` to open a second command prompt showing logs.
 
 ---
 
 ## Model Config (`gguf/<model-name>/config.json`)
-
-If a model folder is scanned and does not contain a configuration, ZeroCline automatically generates one with safe defaults:
 
 ```json
 {
@@ -99,8 +126,8 @@ If a model folder is scanned and does not contain a configuration, ZeroCline aut
 }
 ```
 
-* `n_gpu_layers`: Number of layers to offload to the GPU (set to `0` by default for safe CPU loading). Users with capable GPUs can change this to offload more layers to memory.
-* `thinking`: A boolean (defaults to `false`). Set to `true` for models that support native reasoning/thinking output patterns.
+- `n_gpu_layers`: Number of layers to offload to the GPU (set to `0` by default for safe CPU loading).
+- `thinking`: Set to `true` for models that support native reasoning/thinking output patterns.
 
 ---
 
@@ -110,24 +137,20 @@ If a model folder is scanned and does not contain a configuration, ZeroCline aut
 - Rust compiler (2024 edition or newer)
 - Active Internet Connection (only during the first launch or auto-setup)
 
-### 1. Build the Release Binary
-Run standard cargo build to generate the optimized executable:
-```powershell
+### 1. Build
+```sh
 cargo build --release
 ```
 
-### 2. Copy the Executable
-Copy the compiled binary from the target directory to your root directory:
-```powershell
-Copy-Item -Path "target/release/zerocline.exe" -Destination "zerocline.exe" -Force
+### 2. Run
+```sh
+./target/release/zerocline
 ```
 
-### 3. Run
-Launch the application:
-```powershell
-./zerocline.exe
-```
-*On the first run, ZeroCline will detect missing runtimes and automatically trigger the auto-setup routine to download Node.js, the specified llama backend, and the target model, and configure the workspace environment before booting directly into the interactive Cline CLI TUI.*
+On the first run, ZeroCline will detect missing runtimes and automatically trigger the auto-setup routine to download Node.js, the specified llama backend, and the target model before booting directly into the interactive Cline CLI TUI.
+
+### Linux Wrapper
+A convenience `run.sh` script is provided — it calls the binary from the project root and passes through any arguments.
 
 ---
 
