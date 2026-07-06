@@ -1,14 +1,15 @@
+use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Child};
-use anyhow::{Result, anyhow, Context};
+use std::process::{Child, Command};
 
 // ─── Platform abstractions ───────────────────────────────────────
 
 #[cfg(windows)]
 mod platform {
-    use std::os::windows::process::CommandExt;
+    use anyhow::{anyhow, Result};
     use std::os::windows::io::RawHandle;
-    use anyhow::{Result, anyhow};
+    use std::os::windows::process::CommandExt;
+    use std::process::{Child, Command};
 
     pub const CREATE_NO_WINDOW: u32 = 0x08000000;
     pub const CREATE_NEW_CONSOLE: u32 = 0x00000010;
@@ -64,9 +65,7 @@ mod platform {
             hProcess: *mut std::ffi::c_void,
         ) -> i32;
 
-        fn CloseHandle(
-            hObject: *mut std::ffi::c_void,
-        ) -> i32;
+        fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
     }
 
     const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x00002000;
@@ -84,7 +83,10 @@ mod platform {
             unsafe {
                 let handle = CreateJobObjectW(std::ptr::null_mut(), std::ptr::null());
                 if handle.is_null() {
-                    return Err(anyhow!("Failed to create Job Object: {}", std::io::Error::last_os_error()));
+                    return Err(anyhow!(
+                        "Failed to create Job Object: {}",
+                        std::io::Error::last_os_error()
+                    ));
                 }
 
                 let mut info = std::mem::zeroed::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>();
@@ -111,7 +113,10 @@ mod platform {
             unsafe {
                 let res = AssignProcessToJobObject(self.handle, process_handle);
                 if res == 0 {
-                    return Err(anyhow!("Failed to assign process to Job Object: {}", std::io::Error::last_os_error()));
+                    return Err(anyhow!(
+                        "Failed to assign process to Job Object: {}",
+                        std::io::Error::last_os_error()
+                    ));
                 }
                 Ok(())
             }
@@ -120,13 +125,19 @@ mod platform {
 
     impl Drop for WinJob {
         fn drop(&mut self) {
-            unsafe { CloseHandle(self.handle); }
+            unsafe {
+                CloseHandle(self.handle);
+            }
         }
     }
 
     /// Apply Windows-specific creation flags to a Command.
     pub fn apply_creation_flags(cmd: &mut Command, hide: bool) {
-        let flags = if hide { CREATE_NO_WINDOW } else { CREATE_NEW_CONSOLE };
+        let flags = if hide {
+            CREATE_NO_WINDOW
+        } else {
+            CREATE_NEW_CONSOLE
+        };
         cmd.creation_flags(flags);
     }
 
@@ -140,8 +151,8 @@ mod platform {
 #[cfg(unix)]
 #[allow(dead_code)]
 mod platform {
-    use std::process::{Command, Child, Stdio};
     use anyhow::Result;
+    use std::process::{Child, Command, Stdio};
 
     pub fn apply_creation_flags(cmd: &mut Command, hide: bool) {
         if hide {
@@ -158,18 +169,26 @@ mod platform {
     /// No-op on Unix — we just kill children on drop.
     pub struct UnixJob;
     impl UnixJob {
-        pub fn create() -> Result<Self> { Ok(UnixJob) }
-        pub fn assign_process(&self, _pid: u32) -> Result<()> { Ok(()) }
+        pub fn create() -> Result<Self> {
+            Ok(UnixJob)
+        }
+        pub fn assign_process(&self, _pid: u32) -> Result<()> {
+            Ok(())
+        }
     }
 }
 
 // ─── Path separator helpers ──────────────────────────────────────
 
 #[cfg(windows)]
-fn path_sep() -> &'static str { ";" }
+fn path_sep() -> &'static str {
+    ";"
+}
 
 #[cfg(not(windows))]
-fn path_sep() -> &'static str { ":" }
+fn path_sep() -> &'static str {
+    ":"
+}
 
 fn join_path(parts: &[&str]) -> String {
     parts.join(path_sep())
@@ -189,10 +208,15 @@ mod bin_names {
     pub fn node_path(node_dir: &std::path::Path) -> String {
         node_dir.to_string_lossy().to_string()
     }
-    pub fn cline_script_name() -> &'static str { "run_cline.bat" }
+    pub fn cline_script_name() -> &'static str {
+        "run_cline.bat"
+    }
     pub fn cline_command(cline_script: &std::path::Path) -> std::process::Command {
         let mut cmd = std::process::Command::new("cmd");
-        let script_path = format!("..\\{}", cline_script.file_name().unwrap().to_string_lossy());
+        let script_path = format!(
+            "..\\{}",
+            cline_script.file_name().unwrap().to_string_lossy()
+        );
         cmd.args(["/C", &script_path]);
         cmd
     }
@@ -215,14 +239,19 @@ mod bin_names {
     pub fn node_path(node_dir: &std::path::Path) -> String {
         node_dir.join("bin").to_string_lossy().to_string()
     }
-    pub fn cline_script_name() -> &'static str { "run_cline.sh" }
+    pub fn cline_script_name() -> &'static str {
+        "run_cline.sh"
+    }
     pub fn cline_command(cline_script: &std::path::Path) -> std::process::Command {
         // Script has #!/bin/bash and is chmod'd +x; execute directly
         std::process::Command::new(cline_script)
     }
     pub fn cline_auth_command(node_bin: &std::path::Path) -> std::process::Command {
         let mut cmd = std::process::Command::new(node_bin);
-        let cline_path = std::path::Path::new("node_modules").join("cline").join("bin").join("cline");
+        let cline_path = std::path::Path::new("node_modules")
+            .join("cline")
+            .join("bin")
+            .join("cline");
         cmd.args([cline_path.to_string_lossy().as_ref(), "auth"]);
         cmd
     }
@@ -245,7 +274,13 @@ pub fn clean_absolute_path(path: &Path) -> Result<PathBuf> {
     }
 }
 
-pub fn write_cline_config(workspace_dir: &Path, host: &str, port: u16, _ctx_size: usize, _thinking: bool) -> Result<()> {
+pub fn write_cline_config(
+    workspace_dir: &Path,
+    host: &str,
+    port: u16,
+    _ctx_size: usize,
+    _thinking: bool,
+) -> Result<()> {
     let home_dir = workspace_dir.join("home");
     let node_dir = workspace_dir.join("node");
 
@@ -263,28 +298,41 @@ pub fn write_cline_config(workspace_dir: &Path, host: &str, port: u16, _ctx_size
     let mut auth_cmd = bin_names::cline_auth_command(&auth_node_bin);
     auth_cmd
         .args([
-            "--provider", "openai",
-            "--apikey", "llama.cpp",
-            "--modelid", "local-model",
-            "--baseurl", &base_url,
+            "--provider",
+            "openai",
+            "--apikey",
+            "llama.cpp",
+            "--modelid",
+            "local-model",
+            "--baseurl",
+            &base_url,
         ])
         .current_dir(workspace_dir)
         .env("HOME", &abs_home_dir)
         .env("PATH", &new_path)
         .env("CLINE_DATA_DIR", &abs_cline_dir)
-        .env("CLINE_PROVIDER_SETTINGS_PATH", &abs_cline_dir.join("settings").join("providers.json"))
-        .env("CLINE_GLOBAL_SETTINGS_PATH", &abs_cline_dir.join("settings").join("global-settings.json"));
+        .env(
+            "CLINE_PROVIDER_SETTINGS_PATH",
+            &abs_cline_dir.join("settings").join("providers.json"),
+        )
+        .env(
+            "CLINE_GLOBAL_SETTINGS_PATH",
+            &abs_cline_dir.join("settings").join("global-settings.json"),
+        );
 
     #[cfg(windows)]
     {
         auth_cmd.env("USERPROFILE", &abs_home_dir);
     }
 
-    let status = auth_cmd.status()
+    let status = auth_cmd
+        .status()
         .context("Failed to run cline auth command")?;
 
     if !status.success() {
-        return Err(anyhow!("Failed to configure Cline provider via auth command"));
+        return Err(anyhow!(
+            "Failed to configure Cline provider via auth command"
+        ));
     }
 
     // Write run script
@@ -299,7 +347,11 @@ pub fn write_cline_config(workspace_dir: &Path, host: &str, port: u16, _ctx_size
 
     #[cfg(not(windows))]
     {
-        let cline_script = workspace_dir.join("node_modules").join("cline").join("bin").join("cline");
+        let cline_script = workspace_dir
+            .join("node_modules")
+            .join("cline")
+            .join("bin")
+            .join("cline");
         let sh_content = format!(
             r#"#!/bin/bash
 export PATH="{}:$PATH"
@@ -310,8 +362,14 @@ exec "{}" "{}" "$@"
 "#,
             bin_names::node_path(&abs_node_dir),
             abs_cline_dir.to_string_lossy(),
-            abs_cline_dir.join("settings").join("providers.json").to_string_lossy(),
-            abs_cline_dir.join("settings").join("global-settings.json").to_string_lossy(),
+            abs_cline_dir
+                .join("settings")
+                .join("providers.json")
+                .to_string_lossy(),
+            abs_cline_dir
+                .join("settings")
+                .join("global-settings.json")
+                .to_string_lossy(),
             bin_names::node_bin(&abs_node_dir).to_string_lossy(),
             cline_script.to_string_lossy(),
         );
@@ -336,30 +394,35 @@ pub fn start_llama_server(
     let backend_dir = llama_dir.join(backend);
     let server_exe = bin_names::llama_server(&backend_dir);
     if !server_exe.exists() {
-        return Err(anyhow!("llama-server not found at {}", server_exe.display()));
+        return Err(anyhow!(
+            "llama-server not found at {}",
+            server_exe.display()
+        ));
     }
 
     println!("Starting llama.cpp server (backend: {})...", backend);
     let mut cmd = Command::new(&server_exe);
     cmd.args([
-        "-m", &model_path.to_string_lossy(),
-        "--host", host,
-        "--port", &port.to_string(),
-        "-c", &ctx_size.to_string(),
-        "-ngl", &n_gpu_layers.to_string(),
+        "-m",
+        &model_path.to_string_lossy(),
+        "--host",
+        host,
+        "--port",
+        &port.to_string(),
+        "-c",
+        &ctx_size.to_string(),
+        "-ngl",
+        &n_gpu_layers.to_string(),
     ]);
 
     platform::apply_creation_flags(&mut cmd, hide_second_terminal);
 
-    let child = cmd.spawn()
-        .context("Failed to spawn llama-server")?;
+    let child = cmd.spawn().context("Failed to spawn llama-server")?;
 
     Ok(child)
 }
 
 pub fn run_cline_agent(workspace_dir: &Path) -> Result<Child> {
-    use std::io::IsTerminal;
-
     let home_dir = workspace_dir.join("home");
     let node_dir = workspace_dir.join("node");
     let project_dir = workspace_dir.join("project");
@@ -382,8 +445,14 @@ pub fn run_cline_agent(workspace_dir: &Path) -> Result<Child> {
         cmd.env("HOME", &abs_home_dir)
             .env("PATH", &new_path)
             .env("CLINE_DATA_DIR", &abs_cline_dir)
-            .env("CLINE_PROVIDER_SETTINGS_PATH", &abs_cline_dir.join("settings").join("providers.json"))
-            .env("CLINE_GLOBAL_SETTINGS_PATH", &abs_cline_dir.join("settings").join("global-settings.json"))
+            .env(
+                "CLINE_PROVIDER_SETTINGS_PATH",
+                &abs_cline_dir.join("settings").join("providers.json"),
+            )
+            .env(
+                "CLINE_GLOBAL_SETTINGS_PATH",
+                &abs_cline_dir.join("settings").join("global-settings.json"),
+            )
             .env("USERPROFILE", &abs_home_dir)
             .current_dir(&project_dir);
         let child = cmd.spawn().context("Failed to launch Cline agent")?;
@@ -397,8 +466,14 @@ pub fn run_cline_agent(workspace_dir: &Path) -> Result<Child> {
             cmd.env("HOME", &abs_home_dir)
                 .env("PATH", &new_path)
                 .env("CLINE_DATA_DIR", &abs_cline_dir)
-                .env("CLINE_PROVIDER_SETTINGS_PATH", &abs_cline_dir.join("settings").join("providers.json"))
-                .env("CLINE_GLOBAL_SETTINGS_PATH", &abs_cline_dir.join("settings").join("global-settings.json"))
+                .env(
+                    "CLINE_PROVIDER_SETTINGS_PATH",
+                    &abs_cline_dir.join("settings").join("providers.json"),
+                )
+                .env(
+                    "CLINE_GLOBAL_SETTINGS_PATH",
+                    &abs_cline_dir.join("settings").join("global-settings.json"),
+                )
                 .current_dir(&project_dir);
             let child = cmd.spawn().context("Failed to launch Cline agent")?;
             return Ok(child);
@@ -426,8 +501,14 @@ pub fn run_cline_agent(workspace_dir: &Path) -> Result<Child> {
                 .env("HOME", &abs_home_dir)
                 .env("PATH", &new_path)
                 .env("CLINE_DATA_DIR", &abs_cline_dir)
-                .env("CLINE_PROVIDER_SETTINGS_PATH", &abs_cline_dir.join("settings").join("providers.json"))
-                .env("CLINE_GLOBAL_SETTINGS_PATH", &abs_cline_dir.join("settings").join("global-settings.json"))
+                .env(
+                    "CLINE_PROVIDER_SETTINGS_PATH",
+                    &abs_cline_dir.join("settings").join("providers.json"),
+                )
+                .env(
+                    "CLINE_GLOBAL_SETTINGS_PATH",
+                    &abs_cline_dir.join("settings").join("global-settings.json"),
+                )
                 .current_dir(&project_dir)
                 .spawn()
             {
@@ -452,14 +533,29 @@ pub struct ProcessManager {
 impl ProcessManager {
     pub fn new() -> Result<Self> {
         #[cfg(windows)]
-        { let job = platform::WinJob::create()?; return Ok(Self { children: vec![], job }); }
+        {
+            let job = platform::WinJob::create()?;
+            return Ok(Self {
+                children: vec![],
+                job,
+            });
+        }
         #[cfg(unix)]
-        { let _job = platform::UnixJob::create()?; return Ok(Self { children: vec![], _job }); }
+        {
+            let _job = platform::UnixJob::create()?;
+            return Ok(Self {
+                children: vec![],
+                _job,
+            });
+        }
     }
 
     pub fn add(&mut self, child: Child) -> Result<()> {
         #[cfg(windows)]
-        { self.job.assign_process(platform::get_process_handle(&child))?; }
+        {
+            self.job
+                .assign_process(platform::get_process_handle(&child))?;
+        }
         self.children.push(child);
         Ok(())
     }
