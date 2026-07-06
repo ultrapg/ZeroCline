@@ -1,4 +1,4 @@
-# ZeroCline: Portable Cline Coding Agent Suite
+# ZeroCline: Portable Cline Coding Agent
 
 ZeroCline is a portable, self-contained Rust executable that downloads, configures, and orchestrates the lifecycle of the **Cline coding agent CLI** alongside a **llama.cpp** backend server, keeping everything strictly isolated in a single directory. Supports **Windows** and **Linux**.
 
